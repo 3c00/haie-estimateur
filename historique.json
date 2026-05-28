@@ -1,0 +1,19 @@
+[
+  {
+    "date": "2026-05-27T23:41:23.134557",
+    "type_haie": "cèdre",
+    "longueur_m": 15,
+    "hauteur_m": 3,
+    "densite": "moyenne",
+    "acces": "facile",
+    "prix_estime": 529.9,
+    "temps_estime": 12.6,
+    "equipement": [
+      "Sécateur",
+      "Gants de protection",
+      "Perche télescopique"
+    ],
+    "prix_reel": null,
+    "photo": "data\\haie_20260527_234123.jpg"
+  }
+]

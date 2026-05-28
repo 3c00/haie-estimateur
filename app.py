@@ -12,7 +12,7 @@ from PIL import Image
 
 import api_client
 from model import (
-    TYPES_HAIE,
+    TYPES_JOB,
     DENSITES,
     ACCES,
     ajouter_correction,
@@ -40,14 +40,14 @@ def sauvegarder_historique(historique):
 
 def analyser_photo(image):
     if image is None:
-        return {k: None for k in ["type_haie", "hauteur_m", "longueur_m", "densite", "acces"]}
+        return {k: None for k in ["type_job", "hauteur_pieds", "longueur_pieds", "densite", "acces"]}
 
     resultat = api_client.analyser_photo(image)
     if resultat is None:
-        return {k: None for k in ["type_haie", "hauteur_m", "longueur_m", "densite", "acces"]}
+        return {k: None for k in ["type_job", "hauteur_pieds", "longueur_pieds", "densite", "acces"]}
 
-    type_haie = resultat.get("type_haie", "").lower()
-    type_valide = type_haie if type_haie in TYPES_HAIE else None
+    type_job = resultat.get("type_job", "").lower()
+    type_valide = type_job if type_job in TYPES_JOB else None
 
     densite = resultat.get("densite", "").lower()
     densite_valide = densite if densite in DENSITES else None
@@ -56,22 +56,22 @@ def analyser_photo(image):
     acces_valide = acces if acces in ACCES else None
 
     return {
-        "type_haie": type_valide,
-        "hauteur_m": resultat.get("hauteur_m"),
-        "longueur_m": resultat.get("longueur_m"),
+        "type_job": type_valide,
+        "hauteur_pieds": resultat.get("hauteur_pieds"),
+        "longueur_pieds": resultat.get("longueur_pieds"),
         "densite": densite_valide,
         "acces": acces_valide,
     }
 
 
-def estimer(type_haie, longueur_m, hauteur_m, densite, acces, image):
+def estimer(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte, image):
     erreurs = []
-    if not type_haie:
-        erreurs.append("Sélectionne un type de haie")
-    if not longueur_m or longueur_m <= 0:
-        erreurs.append("Entre une longueur valide (en mètres)")
-    if not hauteur_m or hauteur_m <= 0:
-        erreurs.append("Entre une hauteur valide (en mètres)")
+    if not type_job:
+        erreurs.append("Sélectionne un type de job")
+    if not longueur_pieds or longueur_pieds <= 0:
+        erreurs.append("Entre une longueur valide (en pieds linéaires)")
+    if not hauteur_pieds or hauteur_pieds <= 0:
+        erreurs.append("Entre une hauteur valide (en pieds)")
     if not densite:
         erreurs.append("Sélectionne une densité")
     if not acces:
@@ -79,16 +79,18 @@ def estimer(type_haie, longueur_m, hauteur_m, densite, acces, image):
     if erreurs:
         return "\n".join(erreurs), "", "", gr.update(visible=False)
 
-    prix, temps, equipement = estimer_prix(type_haie, longueur_m, hauteur_m, densite, acces)
+    prix, temps, equipement = estimer_prix(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte)
 
     historique = charger_historique()
     entree = {
         "date": datetime.now().isoformat(),
-        "type_haie": type_haie,
-        "longueur_m": longueur_m,
-        "hauteur_m": hauteur_m,
+        "type_job": type_job,
+        "longueur_pieds": longueur_pieds,
+        "hauteur_pieds": hauteur_pieds,
         "densite": densite,
         "acces": acces,
+        "deux_cotes": deux_cotes,
+        "supplement_difficulte": supplement_difficulte,
         "prix_estime": prix,
         "temps_estime": temps,
         "equipement": equipement,
@@ -106,28 +108,38 @@ def estimer(type_haie, longueur_m, hauteur_m, densite, acces, image):
     sauvegarder_historique(historique)
 
     texte_equipement = ", ".join(equipement)
+
+    details = f"Longueur : {longueur_pieds} pi linéaires  |  Hauteur : {hauteur_pieds} pi"
+    if deux_cotes:
+        details += "  |  ×1.5 (deux côtés)"
+    if supplement_difficulte:
+        details += f"  |  Suppl. difficulté : {supplement_difficulte}$"
+
     resultat = (
         f"--- RÉSULTAT DE L'ESTIMATION ---\n\n"
-        f"Prix suggéré : {prix:.2f} $ CAD\n"
+        f"{details}\n\n"
+        f"**Prix suggéré : {prix:.2f} $ CAD**\n"
         f"Temps estimé : {temps:.1f} heures\n"
         f"Équipement recommandé : {texte_equipement}"
     )
 
     return resultat, "", "", gr.update(visible=True, value={
-        "type_haie": type_haie,
-        "longueur_m": longueur_m,
-        "hauteur_m": hauteur_m,
+        "type_job": type_job,
+        "longueur_pieds": longueur_pieds,
+        "hauteur_pieds": hauteur_pieds,
         "densite": densite,
         "acces": acces,
+        "deux_cotes": deux_cotes,
+        "supplement_difficulte": supplement_difficulte,
         "prix_estime": prix,
     })
 
 
-def corriger_estimation(type_haie, longueur_m, hauteur_m, densite, acces, prix_estime, prix_reel):
+def corriger_estimation(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte, prix_estime, prix_reel):
     if not prix_reel or prix_reel <= 0:
         return "Entre un prix réel valide."
 
-    ajouter_correction(type_haie, longueur_m, hauteur_m, densite, acces, prix_estime, prix_reel)
+    ajouter_correction(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte, prix_estime, prix_reel)
 
     historique = charger_historique()
     if historique:
@@ -167,7 +179,7 @@ def obtenir_statistiques():
         if not meilleur_mois.empty:
             stats["Meilleur mois"] = meilleur_mois.idxmax().strftime("%B %Y")
 
-        type_plus_rentable = df.groupby("type_haie")["prix_estime"].sum()
+        type_plus_rentable = df.groupby("type_job")["prix_estime"].sum()
         if not type_plus_rentable.empty:
             stats["Type le plus rentable"] = type_plus_rentable.idxmax()
 
@@ -193,14 +205,14 @@ def mettre_jour_historique():
         return pd.DataFrame()
 
     df = pd.DataFrame(historique)
-    colonnes = ["date", "type_haie", "longueur_m", "hauteur_m", "densite", "acces", "prix_estime", "prix_reel"]
+    colonnes = ["date", "type_job", "longueur_pieds", "hauteur_pieds", "densite", "acces", "deux_cotes", "supplement_difficulte", "prix_estime", "prix_reel"]
     colonnes_presentes = [c for c in colonnes if c in df.columns]
     return df[colonnes_presentes]
 
 
 with gr.Blocks(title="Haie Estimateur") as app:
     gr.Markdown("# Haie Estimateur")
-    gr.Markdown("Estime le prix des jobs de taille de haie à partir de photos et de caractéristiques.")
+    gr.Markdown("Estime le prix des jobs de taille de haie. Prix en $ CAD, dimensions en pieds.")
 
     estimation_courante = gr.State()
 
@@ -210,22 +222,24 @@ with gr.Blocks(title="Haie Estimateur") as app:
                 image_input = gr.Image(label="Photo de la haie", type="pil")
                 btn_analyser = gr.Button("Analyser la photo (DeepSeek AI)")
                 gr.Markdown("---")
-                type_haie = gr.Dropdown(choices=TYPES_HAIE, label="Type de haie")
-                longueur_m = gr.Number(label="Longueur estimée (mètres)", minimum=0)
-                hauteur_m = gr.Number(label="Hauteur (mètres)", minimum=0)
+                type_job = gr.Dropdown(choices=TYPES_JOB, label="Type de job")
+                longueur_pieds = gr.Number(label="Longueur (pieds linéaires)", minimum=0)
+                hauteur_pieds = gr.Number(label="Hauteur (pieds)", minimum=0)
                 densite = gr.Radio(choices=DENSITES, label="Densité")
                 acces = gr.Radio(choices=ACCES, label="Accès")
+                deux_cotes = gr.Checkbox(label="Des deux côtés (×1.5)")
+                supplement_difficulte = gr.Dropdown(choices=[0, 25, 50], label="Suppl. difficulté ($)", value=0)
 
             with gr.Column(scale=1):
                 image_output = gr.Image(label="Aperçu")
                 btn_estimer = gr.Button("Estimer le prix", variant="primary")
-                resultat_texte = gr.Textbox(label="Résultat", lines=10)
+                resultat_texte = gr.Textbox(label="Résultat", lines=12)
 
         with gr.Row():
             btn_analyser.click(
                 fn=analyser_photo,
                 inputs=[image_input],
-                outputs=[type_haie, hauteur_m, longueur_m, densite, acces],
+                outputs=[type_job, hauteur_pieds, longueur_pieds, densite, acces],
                 queue=False,
             )
 
@@ -240,11 +254,13 @@ with gr.Blocks(title="Haie Estimateur") as app:
         gr.Markdown("Entre le prix réel payé après le job pour améliorer le modèle.")
         with gr.Row():
             with gr.Column():
-                correction_type = gr.Dropdown(choices=TYPES_HAIE, label="Type de haie", interactive=False)
-                correction_longueur = gr.Number(label="Longueur (m)", interactive=False)
-                correction_hauteur = gr.Number(label="Hauteur (m)", interactive=False)
+                correction_type = gr.Dropdown(choices=TYPES_JOB, label="Type de job", interactive=False)
+                correction_longueur = gr.Number(label="Longueur (pi)", interactive=False)
+                correction_hauteur = gr.Number(label="Hauteur (pi)", interactive=False)
                 correction_densite = gr.Radio(choices=DENSITES, label="Densité", interactive=False)
                 correction_acces = gr.Radio(choices=ACCES, label="Accès", interactive=False)
+                correction_deux_cotes = gr.Checkbox(label="Deux côtés", interactive=False)
+                correction_supplement = gr.Number(label="Suppl. difficulté ($)", interactive=False)
                 correction_prix_estime = gr.Number(label="Prix estimé ($)", interactive=False)
             with gr.Column():
                 correction_prix_reel = gr.Number(label="Prix réel ($ CAD)", minimum=0)
@@ -256,6 +272,7 @@ with gr.Blocks(title="Haie Estimateur") as app:
             inputs=[
                 correction_type, correction_longueur, correction_hauteur,
                 correction_densite, correction_acces,
+                correction_deux_cotes, correction_supplement,
                 correction_prix_estime, correction_prix_reel,
             ],
             outputs=[message_correction],
@@ -297,26 +314,28 @@ with gr.Blocks(title="Haie Estimateur") as app:
 
     btn_estimer.click(
         fn=estimer,
-        inputs=[type_haie, longueur_m, hauteur_m, densite, acces, image_input],
+        inputs=[type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte, image_input],
         outputs=[resultat_texte, gr.Textbox(visible=False), gr.Textbox(visible=False), estimation_courante],
     )
 
     def afficher_correction(estimation):
         if estimation is None:
-            return tuple([None] * 6)
+            return tuple([None] * 9)
         return (
-            estimation.get("type_haie"),
-            estimation.get("longueur_m"),
-            estimation.get("hauteur_m"),
+            estimation.get("type_job"),
+            estimation.get("longueur_pieds"),
+            estimation.get("hauteur_pieds"),
             estimation.get("densite"),
             estimation.get("acces"),
+            estimation.get("deux_cotes", False),
+            estimation.get("supplement_difficulte", 0),
             estimation.get("prix_estime"),
         )
 
     estimation_courante.change(
         fn=afficher_correction,
         inputs=[estimation_courante],
-        outputs=[correction_type, correction_longueur, correction_hauteur, correction_densite, correction_acces, correction_prix_estime],
+        outputs=[correction_type, correction_longueur, correction_hauteur, correction_densite, correction_acces, correction_deux_cotes, correction_supplement, correction_prix_estime],
     )
 
 if __name__ == "__main__":
