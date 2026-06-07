@@ -341,4 +341,4 @@ with gr.Blocks(title="Haie Estimateur") as app:
 if __name__ == "__main__":
     modele, score = entrainer_modele()
     print(f"Modèle pré-entraîné avec {len(charger_donnees())} entrées (R² = {score:.3f})")
-    app.launch(inbrowser=True, theme=gr.themes.Soft())
+    app.launch(inbrowser=False, server_name="0.0.0.0", share=True, theme=gr.themes.Soft())
