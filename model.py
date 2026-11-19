@@ -1,210 +1,195 @@
-import json
-import os
-import pickle
-import random
-from pathlib import Path
-
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import r2_score
-from sklearn.model_selection import train_test_split
-
-TRAINING_DATA_FILE = Path("training_data.json")
-MODEL_FILE = Path("model.pkl")
+import math
+from dataclasses import dataclass, field
 
 TYPES_JOB = ["taille normale", "nivelage", "restoration", "cèdre solo / petit arbre"]
 DENSITES = ["légère", "moyenne", "dense"]
 ACCES = ["facile", "moyen", "difficile"]
+TYPE_SOLO = "cèdre solo / petit arbre"
 
-DONNEES_EXEMPLE = [
-    {"type_job": "taille normale", "longueur_pieds": 40, "hauteur_pieds": 8, "densite": "moyenne", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 110},
-    {"type_job": "taille normale", "longueur_pieds": 80, "hauteur_pieds": 10, "densite": "dense", "acces": "moyen", "deux_cotes": True, "supplement_difficulte": 25, "prix_reel": 385},
-    {"type_job": "taille normale", "longueur_pieds": 60, "hauteur_pieds": 11, "densite": "moyenne", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 180},
-    {"type_job": "taille normale", "longueur_pieds": 30, "hauteur_pieds": 4, "densite": "légère", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 60},
-    {"type_job": "taille normale", "longueur_pieds": 100, "hauteur_pieds": 14, "densite": "dense", "acces": "difficile", "deux_cotes": True, "supplement_difficulte": 50, "prix_reel": 575},
-    {"type_job": "taille normale", "longueur_pieds": 50, "hauteur_pieds": 6, "densite": "moyenne", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 137.50},
-    {"type_job": "nivelage", "longueur_pieds": 40, "hauteur_pieds": 10, "densite": "dense", "acces": "moyen", "deux_cotes": False, "supplement_difficulte": 25, "prix_reel": 265},
-    {"type_job": "nivelage", "longueur_pieds": 25, "hauteur_pieds": 8, "densite": "moyenne", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 150},
-    {"type_job": "nivelage", "longueur_pieds": 50, "hauteur_pieds": 12, "densite": "dense", "acces": "difficile", "deux_cotes": False, "supplement_difficulte": 50, "prix_reel": 350},
-    {"type_job": "restoration", "longueur_pieds": 30, "hauteur_pieds": 8, "densite": "dense", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 135},
-    {"type_job": "restoration", "longueur_pieds": 45, "hauteur_pieds": 10, "densite": "dense", "acces": "moyen", "deux_cotes": False, "supplement_difficulte": 25, "prix_reel": 227.50},
-    {"type_job": "restoration", "longueur_pieds": 20, "hauteur_pieds": 6, "densite": "moyenne", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 80},
-    {"type_job": "taille normale", "longueur_pieds": 15, "hauteur_pieds": 3, "densite": "légère", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 30},
-    {"type_job": "taille normale", "longueur_pieds": 70, "hauteur_pieds": 9, "densite": "moyenne", "acces": "facile", "deux_cotes": True, "supplement_difficulte": 0, "prix_reel": 288.75},
-    {"type_job": "nivelage", "longueur_pieds": 60, "hauteur_pieds": 14, "densite": "dense", "acces": "difficile", "deux_cotes": False, "supplement_difficulte": 50, "prix_reel": 410},
-    {"type_job": "restoration", "longueur_pieds": 35, "hauteur_pieds": 9, "densite": "dense", "acces": "moyen", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 175},
-    {"type_job": "cèdre solo / petit arbre", "longueur_pieds": 1, "hauteur_pieds": 7, "densite": "moyenne", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 40},
-    {"type_job": "cèdre solo / petit arbre", "longueur_pieds": 1, "hauteur_pieds": 15, "densite": "moyenne", "acces": "difficile", "deux_cotes": False, "supplement_difficulte": 50, "prix_reel": 100},
-    {"type_job": "taille normale", "longueur_pieds": 120, "hauteur_pieds": 18, "densite": "dense", "acces": "difficile", "deux_cotes": True, "supplement_difficulte": 50, "prix_reel": 680},
-    {"type_job": "taille normale", "longueur_pieds": 25, "hauteur_pieds": 5, "densite": "légère", "acces": "facile", "deux_cotes": False, "supplement_difficulte": 0, "prix_reel": 50},
-]
+# Poids "a priori" de la grille : il faut environ K vrais jobs pour que l'ajustement compte à moitié.
+K_LISSAGE = 3
+ECART_DEFAUT = 0.15
 
 
-def encoder_caracteristiques(type_job, densite, acces):
-    return (
-        [1 if type_job == t else 0 for t in TYPES_JOB]
-        + [1 if densite == d else 0 for d in DENSITES]
-        + [1 if acces == a else 0 for a in ACCES]
+@dataclass
+class Estimation:
+    prix: float | None
+    prix_grille: float | None
+    prix_min: float | None = None
+    prix_max: float | None = None
+    temps: float = 0.0
+    equipement: list = field(default_factory=list)
+    details: list = field(default_factory=list)
+    facteur: float = 1.0
+    nb_jobs_reels: int = 0
+
+
+def taux_taille_normale(hauteur, r):
+    if hauteur < 5:
+        return r["taux_moins_5"]
+    if hauteur <= 10:
+        return r["taux_5_10"]
+    if hauteur <= 12:
+        return r["taux_10_12"]
+    if hauteur <= 20:
+        return r["taux_12_20"]
+    return None
+
+
+def prix_grille(job, r):
+    """Prix selon la grille de l'entreprise, avec le détail du calcul."""
+    t, L, H = job["type_job"], float(job["longueur_pieds"]), float(job["hauteur_pieds"])
+    suppl = float(job.get("supplement_difficulte") or 0)
+    details = []
+
+    if t == TYPE_SOLO:
+        prix = r["solo_base"] + H * r["solo_par_pied"]
+        details.append(f"Cèdre solo : {r['solo_base']:.2f} $ + {H:g} pi × {r['solo_par_pied']:.2f} $")
+        if job["acces"] == "difficile":
+            prix *= r["mult_acces_difficile_solo"]
+            details.append(f"Accès difficile : × {r['mult_acces_difficile_solo']:g}")
+    else:
+        taux = {
+            "taille normale": taux_taille_normale(H, r),
+            "nivelage": r["taux_nivelage"],
+            "restoration": r["taux_restoration"],
+        }[t]
+        if taux is None:
+            return None, ["Haie de plus de 20 pi : devis personnalisé"]
+        prix = taux * L
+        details.append(f"{L:g} pi × {taux:.2f} $/pi ({t}, {H:g} pi de haut)")
+        if job["densite"] == "dense":
+            prix *= r["mult_dense"]
+            details.append(f"Haie dense : × {r['mult_dense']:g}")
+        if job.get("deux_cotes"):
+            prix *= r["mult_deux_cotes"]
+            details.append(f"Deux côtés : × {r['mult_deux_cotes']:g}")
+
+    if suppl:
+        prix += suppl
+        details.append(f"Supplément difficulté : + {suppl:g} $")
+    return prix, details
+
+
+def temps_grille(job):
+    if job["type_job"] == TYPE_SOLO:
+        return 0.5
+    L, H = float(job["longueur_pieds"]), float(job["hauteur_pieds"])
+    dens = {"légère": 1.0, "moyenne": 1.3, "dense": 1.8}.get(job["densite"], 1.0)
+    acc = {"facile": 1.0, "moyen": 1.2, "difficile": 1.5}.get(job["acces"], 1.0)
+    cotes = 1.5 if job.get("deux_cotes") else 1.0
+    return (L / 15) * (H / 6) * dens * acc * cotes
+
+
+def recommander_equipement(job):
+    t, H = job["type_job"], float(job["hauteur_pieds"])
+    eq = ["Sécateur", "Gants de protection"]
+    if t in ("nivelage", "restoration") or job["densite"] == "dense":
+        eq.append("Taille-haie")
+    if H > 10:
+        eq.append("Perche télescopique / escabeau")
+    if H > 15:
+        eq.append("Nacelle")
+    if job["acces"] == "difficile":
+        eq.append("Harnais de sécurité")
+    if t == "nivelage":
+        eq.append("Scie à chaîne")
+    return eq
+
+
+def _moyenne_log_lissee(logs, a_priori=0.0, k=K_LISSAGE):
+    n = len(logs)
+    return (sum(logs) + k * a_priori) / (n + k)
+
+
+class Calibration:
+    """Ajuste la grille avec les vrais prix payés : facteur global, puis facteur par type de job."""
+
+    def __init__(self, jobs_reels, reglages):
+        self.r = reglages
+        self.logs_par_type = {}
+        logs = []
+        for j in jobs_reels:
+            g, _ = prix_grille(j, reglages)
+            if g and g > 0 and j.get("prix_reel"):
+                lr = math.log(float(j["prix_reel"]) / g)
+                logs.append(lr)
+                self.logs_par_type.setdefault(j["type_job"], []).append(lr)
+        self.n = len(logs)
+        self.log_global = _moyenne_log_lissee(logs) if logs else 0.0
+
+        residus = [
+            lr - self.log_type(t) for t, lrs in self.logs_par_type.items() for lr in lrs
+        ]
+        if len(residus) >= 3:
+            ecart = math.sqrt(sum(x * x for x in residus) / (len(residus) - 1))
+            self.ecart = min(max(ecart, 0.05), 0.5)
+        else:
+            self.ecart = ECART_DEFAUT
+
+        ratios_temps = [
+            math.log(float(j["temps_reel"]) / temps_grille(j))
+            for j in jobs_reels
+            if j.get("temps_reel") and temps_grille(j) > 0
+        ]
+        self.n_temps = len(ratios_temps)
+        self.facteur_temps = math.exp(_moyenne_log_lissee(ratios_temps)) if ratios_temps else 1.0
+
+    def log_type(self, type_job):
+        return _moyenne_log_lissee(self.logs_par_type.get(type_job, []), a_priori=self.log_global)
+
+    def facteur(self, type_job):
+        return math.exp(self.log_type(type_job))
+
+
+def arrondir(prix, pas):
+    return round(prix / pas) * pas if pas and pas > 0 else round(prix, 2)
+
+
+def estimer(job, jobs_reels, reglages):
+    g, details = prix_grille(job, reglages)
+    cal = Calibration(jobs_reels, reglages)
+    temps = temps_grille(job) * cal.facteur_temps
+    eq = recommander_equipement(job)
+    if g is None:
+        return Estimation(None, None, temps=temps, equipement=eq, details=details, nb_jobs_reels=cal.n)
+
+    f = cal.facteur(job["type_job"])
+    prix = g * f
+    if abs(f - 1) >= 0.005:
+        quoi = "ton vrai prix" if cal.n == 1 else f"tes {cal.n} vrais prix"
+        details.append(f"Ajustement selon {quoi} : × {f:.3f}")
+    minimum = float(reglages.get("prix_minimum") or 0)
+    if prix < minimum:
+        prix = minimum
+        details.append(f"Prix minimum appliqué : {minimum:g} $")
+
+    pas = reglages.get("arrondi", 5)
+    return Estimation(
+        prix=arrondir(prix, pas),
+        prix_grille=round(g, 2),
+        prix_min=arrondir(max(prix * math.exp(-cal.ecart), minimum), pas),
+        prix_max=arrondir(prix * math.exp(cal.ecart), pas),
+        temps=round(temps, 1),
+        equipement=eq,
+        details=details,
+        facteur=f,
+        nb_jobs_reels=cal.n,
     )
 
 
-def preparer_donnees(donnees):
-    X, y = [], []
-    for d in donnees:
-        caracteristiques = encoder_caracteristiques(d["type_job"], d["densite"], d["acces"])
-        X.append(caracteristiques + [d["longueur_pieds"], d["hauteur_pieds"], int(d["deux_cotes"]), d["supplement_difficulte"]])
-        y.append(d["prix_reel"])
-    return np.array(X), np.array(y)
-
-
-def charger_donnees():
-    if TRAINING_DATA_FILE.exists():
-        with open(TRAINING_DATA_FILE, "r") as f:
-            return json.load(f)
-    return list(DONNEES_EXEMPLE)
-
-
-def sauvegarder_donnees(donnees):
-    with open(TRAINING_DATA_FILE, "w") as f:
-        json.dump(donnees, f, indent=2, ensure_ascii=False)
-
-
-def entrainer_modele():
-    donnees = charger_donnees()
-    X, y = preparer_donnees(donnees)
-
-    if len(donnees) < 3:
-        return None, 0.0
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    modele = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
-    modele.fit(X_train, y_train)
-
-    with open(MODEL_FILE, "wb") as f:
-        pickle.dump(modele, f)
-
-    score = r2_score(y_test, modele.predict(X_test)) if len(y_test) > 1 else 0.0
-    return modele, score
-
-
-def charger_modele():
-    if MODEL_FILE.exists():
-        with open(MODEL_FILE, "rb") as f:
-            return pickle.load(f)
-    return entrainer_modele()[0]
-
-
-def ajouter_correction(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte, prix_estime, prix_reel):
-    donnees = charger_donnees()
-    donnees.append({
-        "type_job": type_job,
-        "longueur_pieds": longueur_pieds,
-        "hauteur_pieds": hauteur_pieds,
-        "densite": densite,
-        "acces": acces,
-        "deux_cotes": deux_cotes,
-        "supplement_difficulte": supplement_difficulte,
-        "prix_reel": prix_reel,
-    })
-    sauvegarder_donnees(donnees)
-
-
-def calculer_prix_fallback(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte):
-    taux_horaire = None
-    if type_job == "taille normale":
-        if hauteur_pieds < 5:
-            taux_horaire = 2.0
-        elif hauteur_pieds <= 6:
-            taux_horaire = 2.75
-        elif hauteur_pieds <= 10:
-            taux_horaire = 2.75
-        elif hauteur_pieds <= 12:
-            taux_horaire = 3.0
-        elif hauteur_pieds <= 20:
-            taux_horaire = 3.5
-        else:
-            taux_horaire = None
-    elif type_job == "nivelage":
-        taux_horaire = 6.0
-    elif type_job == "restoration":
-        taux_horaire = 4.25
-    elif type_job == "cèdre solo / petit arbre":
-        return estimer_prix_solo(longueur_pieds, hauteur_pieds, acces, supplement_difficulte), 0.5, ["Sécateur", "Gants"]
-
-    if taux_horaire is None:
-        return 0, 0, ["Nous contacter - devis personnalisé"]
-
-    prix_base = taux_horaire * longueur_pieds
-
-    multiplicateur_densite = {"légère": 1.0, "moyenne": 1.0, "dense": 1.15}
-    prix_base *= multiplicateur_densite.get(densite, 1.0)
-
-    if deux_cotes:
-        prix_base *= 1.5
-
-    prix_base += supplement_difficulte
-
-    temps = estimer_temps(longueur_pieds, hauteur_pieds, densite, acces)
-    equipement = recommander_equipement(hauteur_pieds, densite, acces, type_job)
-
-    return round(prix_base, 2), round(temps, 1), equipement
-
-
-def estimer_prix_solo(longueur_pieds, hauteur_pieds, acces, supplement_difficulte):
-    prix_base = 30 + (hauteur_pieds * 3)
-    if acces == "difficile":
-        prix_base *= 1.3
-    prix_base += supplement_difficulte
-    return round(max(prix_base, 30), 2)
-
-
-def estimer_prix(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte):
-    modele = charger_modele()
-
-    if modele is None:
-        return calculer_prix_fallback(type_job, longueur_pieds, hauteur_pieds, densite, acces, deux_cotes, supplement_difficulte)
-
-    if type_job == "cèdre solo / petit arbre":
-        prix = estimer_prix_solo(longueur_pieds, hauteur_pieds, acces, supplement_difficulte)
-        temps = 0.5
-        equipement = recommander_equipement(hauteur_pieds, densite, acces, type_job)
-        return prix, temps, equipement
-
-    caracteristiques = encoder_caracteristiques(type_job, densite, acces)
-    X = np.array([caracteristiques + [longueur_pieds, hauteur_pieds, int(deux_cotes), supplement_difficulte]])
-
-    prix = float(modele.predict(X)[0])
-    temps = estimer_temps(longueur_pieds, hauteur_pieds, densite, acces)
-    equipement = recommander_equipement(hauteur_pieds, densite, acces, type_job)
-
-    return round(prix, 2), round(temps, 1), equipement
-
-
-def estimer_temps(longueur_pieds, hauteur_pieds, densite, acces):
-    multiplicateur_densite = {"légère": 1.0, "moyenne": 1.3, "dense": 1.8}
-    multiplicateur_acces = {"facile": 1.0, "moyen": 1.2, "difficile": 1.5}
-    heures_base = (longueur_pieds / 15) * (hauteur_pieds / 6)
-    return heures_base * multiplicateur_densite.get(densite, 1.0) * multiplicateur_acces.get(acces, 1.0)
-
-
-def recommander_equipement(hauteur_pieds, densite, acces, type_job):
-    equipement = ["Sécateur", "Gants de protection"]
-    if type_job in ("nivelage", "restoration"):
-        equipement.append("Taille-haie électrique")
-    if hauteur_pieds > 10:
-        equipement.append("Perche télescopique")
-    if hauteur_pieds > 15:
-        equipement.append("Nacelle")
-    if densite == "dense":
-        equipement.append("Taille-haie électrique")
-    if acces == "difficile":
-        equipement.append("Harnais de sécurité")
-    if type_job == "nivelage":
-        equipement.append("Chainsaw")
-    return equipement
-
-
-if __name__ == "__main__":
-    modele, score = entrainer_modele()
-    print(f"Modèle entraîné avec un score R² de {score:.3f}")
+def evaluer(jobs_reels, reglages):
+    """Validation « un job retiré à la fois » : erreur moyenne de la grille seule vs grille ajustée."""
+    utilisables = [j for j in jobs_reels if prix_grille(j, reglages)[0]]
+    if len(utilisables) < 3:
+        return None
+    err_grille, err_ajuste = [], []
+    for i, j in enumerate(utilisables):
+        autres = utilisables[:i] + utilisables[i + 1:]
+        g, _ = prix_grille(j, reglages)
+        f = Calibration(autres, reglages).facteur(j["type_job"])
+        reel = float(j["prix_reel"])
+        err_grille.append(abs(g - reel))
+        err_ajuste.append(abs(g * f - reel))
+    n = len(utilisables)
+    return {"n": n, "erreur_grille": sum(err_grille) / n, "erreur_ajustee": sum(err_ajuste) / n}

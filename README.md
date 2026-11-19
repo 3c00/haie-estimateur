@@ -1,59 +1,30 @@
 # Haie Estimateur
 
-Application desktop pour estimer les prix de jobs de taille de haie à partir de photos.
+Application pour estimer, soumissionner et suivre des jobs de taille de haie (prix en $ CAD, dimensions en pieds).
+
+## Lancer l'application
+
+1. Installe Python 3.11 ou plus récent (python.org). Sur Windows, coche **« Add Python to PATH »**.
+2. Double-clique sur **`lancer.bat`** (Windows) ou **`lancer.command`** (Mac).
+
+L'application s'ouvre dans ton navigateur. Laisse la fenêtre noire ouverte pendant que tu l'utilises.
 
 ## Fonctionnalités
 
-- **Upload de photos** et analyse automatique via l'API DeepSeek Vision
-- **Formulaire d'estimation** : type de haie, longueur, hauteur, densité, accès
-- **Prédiction IA** avec RandomForestRegressor (scikit-learn)
-- **Correction** des estimations pour améliorer le modèle
-- **Historique** complet avec export CSV
-- **Statistiques** : erreur moyenne, meilleur mois, type le plus rentable
-- Fonctionne 100% hors ligne sauf pour l'analyse photo
+- **Estimation** basée sur ta grille de prix, avec le détail du calcul, une fourchette réaliste, le temps estimé et le taux horaire effectif.
+- **Ajustement automatique** : chaque fois que tu entres le vrai prix d'un job, les estimations suivantes se rapprochent de ce que tu factures vraiment (par type de job).
+- **Soumission PDF** pour le client (nom, adresse, taxes TPS/TVQ si activées, ligne de signature).
+- **Suivi des jobs** : statut (soumis, accepté, terminé, refusé), prix réel, temps réel, photo, export CSV pour Excel.
+- **Statistiques** : revenus, taux d'acceptation, taux horaire réel, précision des estimations, graphiques.
+- **Réglages** : ta grille de prix, prix minimum, arrondi, taxes et coordonnées de l'entreprise.
+- **Photo (optionnel)** : remplit le formulaire avec DeepSeek. Mets ta clé dans un fichier `.env` (voir `.env.example`).
 
-## Installation
-
-```bash
-# Cloner le dépôt
-git clone https://github.com/3c00/haie-estimateur.git
-cd haie-estimateur
-
-# Créer un environnement virtuel
-python -m venv venv
-source venv/bin/activate  # ou venv\Scripts\activate sur Windows
-
-# Installer les dépendances
-pip install -r requirements.txt
-
-# Configurer la clé API DeepSeek (optionnel)
-cp .env.example .env
-# Éditer .env et mettre votre clé DEEPSEEK_API_KEY
-```
-
-## Utilisation
-
-```bash
-python app.py
-```
-
-L'interface s'ouvre dans votre navigateur par défaut.
-
-## Structure
+## Fichiers
 
 ```
-haie-estimateur/
-├── app.py              # Interface Gradio
-├── model.py            # Modèle ML (RandomForest)
-├── api_client.py       # Client DeepSeek Vision API
-├── requirements.txt    # Dépendances Python
-├── .env.example        # Template de configuration
-└── .gitignore
+app.py          Interface
+model.py        Calcul des prix et ajustement automatique
+donnees.py      Historique et réglages (historique.json, reglages.json)
+soumission.py   Soumissions PDF (dossier soumissions/)
+api_client.py   Analyse photo DeepSeek
 ```
-
-## Tech Stack
-
-- Python 3.11+
-- Gradio (interface graphique)
-- scikit-learn (RandomForestRegressor)
-- DeepSeek Vision API (analyse photo)
