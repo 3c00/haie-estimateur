@@ -341,4 +341,11 @@ with gr.Blocks(title="Haie Estimateur") as app:
 if __name__ == "__main__":
     modele, score = entrainer_modele()
     print(f"Modèle pré-entraîné avec {len(charger_donnees())} entrées (R² = {score:.3f})")
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("8.8.8.8", 80))
+            print(f"\n>>> Sur ton téléphone (même WiFi), ouvre : http://{s.getsockname()[0]}:7860\n")
+        except OSError:
+            pass
     app.launch(inbrowser=True, server_name="0.0.0.0", theme=gr.themes.Soft())
